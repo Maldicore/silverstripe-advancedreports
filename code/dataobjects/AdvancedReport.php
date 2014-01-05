@@ -72,6 +72,7 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 		'AddCols'					=> 'MultiValueField',	// Which columns should be added ?
 		'NumericSort'				=> 'MultiValueField',	// columns to be numericly sorted
 		'ReportParams'				=> 'MultiValueField',	// provide some defaults for parameterised reports
+		'FieldFormatting'			=> 'MultiValueField',	// format the value that appears in some fields
 	);
 
 	private $field_labels = array(
@@ -81,7 +82,8 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 		'PaginateBy' => 'Paginate By',						
 		'SortBy' => 'Sort Field',
 		'SortDir' => 'Sort Order',
-	);
+	);	
+	
 
 	private static $has_one = array(
 		'Report' => 'AdvancedReport',			// never set for the 'template' report for a page, but used to
@@ -253,6 +255,13 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 		);
 		$sortGroup->setName('SortGroup');
 		$sortGroup->addExtraClass('dropdown');
+		
+		$formatters = ClassInfo::implementorsOf('ReportFieldFormatter');
+		$fmtrs = array();
+		foreach ($formatters as $formatterClass) {
+			$formatter = new $formatterClass();
+			$fmtrs[$formatterClass] = $formatter->label();
+		}
 
 		$fields = new FieldList(
 			new TextField('Title', _t('AdvancedReport.TITLE', 'Title')),
@@ -290,13 +299,19 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 				_t('AdvancedReport.ADD_IN_ROWS', 'Provide totals for these columns'),
 				$converted
 			),
+			$kv = new KeyValueField(
+				'FieldFormatting', 
+				_t('AdvancedReport.FORMAT_FIELDS', 'Custom field formatting'), 
+				$converted, 
+				$fmtrs
+			),
 			new MultiValueDropdownField(
 				'ClearColumns',
 				_t('AdvancedReport.CLEARED_COLS', '"Cleared" columns'),
 				$converted
 			)
 		);
-
+		
 		if($this->hasMethod('updateReportFields')) {
 			Deprecation::notice(
 				'3.0',
@@ -454,7 +469,7 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 
 		for ($i = 0, $c = count($fields); $i < $c; $i++) {
 			$field = $fields[$i];
-			if (!$ops[$i] || !$vals[$i]) {
+			if (!isset($ops[$i]) || !isset($vals[$i])) {
 				break;
 			}
 
@@ -463,7 +478,7 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 				break;
 			}
 
-			$val = $vals[$i];
+			$originalVal = $val = $vals[$i];
 
 			switch ($op) {
 				case 'IN': {
@@ -479,19 +494,32 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 				}
 			}
 			
-			if (is_array($conditionFilters) && count($conditionFilters)) {
-				foreach ($conditionFilters as $prefix => $callable) {
-					if (strpos($val, $prefix) === 0) {
-						$val = substr($val, strlen($prefix));
-						$val = call_user_func($callable, $val, $this);
-					}
-				}
-			}
-
+			$val = $this->applyFiltersToValue($originalVal);
+			
 			$filter[$field . ' ' . $op] = $val;
 		}
+		
 
 		return singleton('FRUtils')->dbQuote($filter);
+	}
+	
+	/**
+	 * Apply some filters to a condition value for use in a query
+	 * 
+	 * @param string $originalVal
+	 * @return string
+	 */
+	public function applyFiltersToValue($originalVal) {
+		$filters = $this->getConditionFilters();
+		
+		foreach ($filters as $prefix => $callable) {
+			if (strpos($originalVal, $prefix) === 0) {
+				$val = substr($originalVal, strlen($prefix));
+				return call_user_func($callable, $val, $this);
+			}
+		}
+
+		return $originalVal;
 	}
 
 
@@ -710,6 +738,11 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 		
 		$childId = $storeIn->constructChild($name);
 		$file = DataObject::get_by_id('File', $childId);
+		
+		// it's a new file, so trigger the onAfterUpload method for extensions that expect it
+		if (method_exists($file, 'onAfterUpload')) {
+			$file->onAfterUpload();
+		}
 
 		// okay, now we should copy across... right?
 		$file->setName($name);
@@ -718,8 +751,10 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 		// create the raw report file
 		$output = $this->createReport($format, true);
 		
-		if (file_exists($output->filename)) {
-			copy($output->filename, $file->getFullPath());
+		if (is_object($output)) {
+			if (file_exists($output->filename)) {
+				copy($output->filename, $file->getFullPath());
+			}
 		}
 
 		// make sure to set the appropriate ID
@@ -733,7 +768,7 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 	 * @param  string $format
 	 * @return ReportFormatter
 	 */
-	protected function getReportFormatter($format) {
+	public function getReportFormatter($format) {
 		$class = ucfirst($format) . 'ReportFormatter';
 
 		if(class_exists($class)) {
@@ -789,8 +824,15 @@ class AdvancedReport extends DataObject implements PermissionProvider {
 }
 
 class ConditionFilters {
+	
 	const ARGUMENT_SEPARATOR = '|';
-
+	
+	protected $possibleParamValues = array();
+	
+	public function __construct($possibleValues = array()) {
+		$this->possibleParamValues = $possibleValues;
+	}
+	
 	public function strtotimeDateValue($value) {
 		$args = $this->getArgs($value);
 		if (!isset($args[1])) {
@@ -806,13 +848,13 @@ class ConditionFilters {
 		if ($params) {
 			$params = $params->getValues();
 		}
-		
+
 		if (isset($_GET[$args[0]])) {
 			return $_GET[$args[0]];
 		}
 
 		if ($params && isset($args[0]) && isset($params[$args[0]])) {
-			return $params[$args[0]];
+			return $report->applyFiltersToValue($params[$args[0]]);
 		}
 		
 		
