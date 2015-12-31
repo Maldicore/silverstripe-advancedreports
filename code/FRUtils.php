@@ -24,105 +24,113 @@ OF SUCH DAMAGE.
 /**
  * A set of utility functions
  */
-class FRUtils {
-	public function __construct() {}
+class FRUtils
+{
+    public function __construct()
+    {
+    }
 
-	function dateToFinancialYear($date) {
-		$ts = strtotime($date);
-		$currYear = date('Y', $ts);
+    public function dateToFinancialYear($date)
+    {
+        $ts = strtotime($date);
+        $currYear = date('Y', $ts);
 
-		// is it in the first or second half of this year?
-		$later = strtotime("$currYear-07-01 00:00:01");
-		if ($ts > $later) {
-			return $currYear . '/' . ((int) $currYear + 1);
-		}
-		return $currYear . '/' . ((int) $currYear - 1);
-	}
+        // is it in the first or second half of this year?
+        $later = strtotime("$currYear-07-01 00:00:01");
+        if ($ts > $later) {
+            return $currYear . '/' . ((int) $currYear + 1);
+        }
+        return $currYear . '/' . ((int) $currYear - 1);
+    }
 
-	/**
-	 * Quote up a filter of the form
-	 *
-	 * array ("ParentID =" => 1)
-	 *
-	 *
-	 *
-	 * @param unknown_type $filter
-	 * @return unknown_type
-	 */
-	function dbQuote($filter = array(), $join = " AND ") {
-		$QUOTE_CHAR = defined('DB::USE_ANSI_SQL') ? '"' : '';
+    /**
+     * Quote up a filter of the form
+     *
+     * array ("ParentID =" => 1)
+     *
+     *
+     *
+     * @param unknown_type $filter
+     * @return unknown_type
+     */
+    public function dbQuote($filter = array(), $join = " AND ")
+    {
+        $QUOTE_CHAR = defined('DB::USE_ANSI_SQL') ? '"' : '';
 
-		$string = '';
-		$sep = '';
+        $string = '';
+        $sep = '';
 
-		foreach ($filter as $field => $value) {
-			// first break the field up into its two components
-			$operator = '';
-			if (is_string($field)) {
-				list($field, $operator) = explode(' ', trim($field));
-			}
+        foreach ($filter as $field => $value) {
+            // first break the field up into its two components
+            $operator = '';
+            if (is_string($field)) {
+                list($field, $operator) = explode(' ', trim($field));
+            }
 
-			$value = $this->recursiveQuote($value);
+            $value = $this->recursiveQuote($value);
 
-			if (strpos($field, '.')) {
-				list($tb, $fl) = explode('.', $field);
-				$string .= $sep . $QUOTE_CHAR . $tb . $QUOTE_CHAR . '.' . $QUOTE_CHAR . $fl . $QUOTE_CHAR . " $operator " . $value;
-			} else {
-				if (is_numeric($field)) {
-					$string .= $sep . $value;
-				} else {
-					$string .= $sep . $QUOTE_CHAR . $field . $QUOTE_CHAR . " $operator " . $value;
-				}
-			}
+            if (strpos($field, '.')) {
+                list($tb, $fl) = explode('.', $field);
+                $string .= $sep . $QUOTE_CHAR . $tb . $QUOTE_CHAR . '.' . $QUOTE_CHAR . $fl . $QUOTE_CHAR . " $operator " . $value;
+            } else {
+                if (is_numeric($field)) {
+                    $string .= $sep . $value;
+                } else {
+                    $string .= $sep . $QUOTE_CHAR . $field . $QUOTE_CHAR . " $operator " . $value;
+                }
+            }
 
-			$sep = $join;
-		}
+            $sep = $join;
+        }
 
-		return $string;
-	}
+        return $string;
+    }
 
-	protected function recursiveQuote($val) {
-		if (is_array($val)) {
-			$return = array();
-			foreach ($val as $v) {
-				$return[] = $this->recursiveQuote($v);
-			}
-			
-			return '('.implode(',', $return).')';
-		} else if (is_null($val)) {
-			$val = 'NULL';
-		} else if (is_int($val)) {
-			$val = (int) $val;
-		} else if (is_double($val)) {
-			$val = (double) $val;
-		} else if (is_float($val)) {
-			$val = (float) $val;
-		} else {
-			$val = "'" . Convert::raw2sql($val) . "'";
-		}
+    protected function recursiveQuote($val)
+    {
+        if (is_array($val)) {
+            $return = array();
+            foreach ($val as $v) {
+                $return[] = $this->recursiveQuote($v);
+            }
+            
+            return '('.implode(',', $return).')';
+        } elseif (is_null($val)) {
+            $val = 'NULL';
+        } elseif (is_int($val)) {
+            $val = (int) $val;
+        } elseif (is_double($val)) {
+            $val = (double) $val;
+        } elseif (is_float($val)) {
+            $val = (float) $val;
+        } else {
+            $val = "'" . Convert::raw2sql($val) . "'";
+        }
 
-		return $val;
-	}
+        return $val;
+    }
 
-	function log($message, $level=null) {
-		if (!$level) {
-			$level = SS_Log::NOTICE;
-		}
-		$message = array(
-			'errno' => '',
-			'errstr' => $message,
-			'errfile' => dirname(__FILE__),
-			'errline' => '',
-			'errcontext' => ''
-		);
+    public function log($message, $level=null)
+    {
+        if (!$level) {
+            $level = SS_Log::NOTICE;
+        }
+        $message = array(
+            'errno' => '',
+            'errstr' => $message,
+            'errfile' => dirname(__FILE__),
+            'errline' => '',
+            'errcontext' => ''
+        );
 
-		SS_Log::log($message, $level);
-	}
+        SS_Log::log($message, $level);
+    }
 
-	public function ajaxResponse($message, $status) {
-		return Convert::raw2json(array(
-			'message' => $message,
-			'status' => $status,
-		));
-	}
+    public function ajaxResponse($message, $status)
+    {
+        return Convert::raw2json(array(
+            'message' => $message,
+            'status' => $status,
+        ));
+    }
 }
